@@ -1,16 +1,19 @@
 import argparse
+import os
 import time
 from typing import Any, Dict
 
+from dotenv import load_dotenv
 from pymongo import MongoClient
 from redis import Redis
 
 from event_transformer import hash_key, normalize_event, ranking_key, ts_key
 
+load_dotenv()
 
-MONGO_URI = "mongodb://localhost:27017/?replicaSet=rs0"
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
 DB_NAME = "marketplace"
 COLLECTION_NAME = "events"

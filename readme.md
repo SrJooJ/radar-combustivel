@@ -120,7 +120,7 @@ cp .env.example .env
 ```
 
 ```env
-MONGO_URI=mongodb://localhost:27017
+MONGO_URI=mongodb://localhost:27017/?directConnection=true
 MONGO_DB=marketplace
 REDIS_HOST=localhost
 REDIS_PORT=6379

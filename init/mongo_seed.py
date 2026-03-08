@@ -1,18 +1,24 @@
 import argparse
+import os
 import random
 import time
 from dataclasses import dataclass
 from typing import Dict, List
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from faker import Faker
+from dotenv import load_dotenv
 from pymongo import MongoClient
-from pymongo.errors import OperationFailure
+from pymongo.errors import OperationFailure, PyMongoError
+
+load_dotenv()
 
 
 fake = Faker("pt_BR")
 RANDOM = random.Random(42)
 
-MONGO_URI = "mongodb://localhost:27017/?replicaSet=rs0"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+LOCALHOST_DIRECT_URI = "mongodb://localhost:27017/?directConnection=true"
 DB_NAME = "marketplace"
 COLLECTION_NAME = "events"
 
@@ -65,6 +71,58 @@ class Restaurant:
 
 def get_client() -> MongoClient:
     return MongoClient(MONGO_URI)
+
+
+def with_direct_connection(uri: str) -> str:
+    parts = urlsplit(uri)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["directConnection"] = "true"
+    new_query = urlencode(query)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
+def without_replicaset(uri: str) -> str:
+    parts = urlsplit(uri)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.pop("replicaSet", None)
+    new_query = urlencode(query)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
+def candidate_uris() -> List[str]:
+    candidates: List[str] = []
+    primary = with_direct_connection(MONGO_URI)
+    candidates.append(primary)
+
+    # Running on host OS: container DNS name "mongo" is usually unresolved.
+    if "mongo:27017" in primary:
+        host_safe = primary.replace("mongo:27017", "localhost:27017")
+        candidates.append(without_replicaset(host_safe))
+
+    candidates.append(without_replicaset(LOCALHOST_DIRECT_URI))
+
+    unique: List[str] = []
+    for uri in candidates:
+        if uri not in unique:
+            unique.append(uri)
+    return unique
+
+
+def get_client_with_fallback() -> MongoClient:
+    """
+    Try configured URI and host-safe fallbacks.
+    """
+    last_exc: Exception | None = None
+    for uri in candidate_uris():
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000)
+        try:
+            client.admin.command("ping")
+            return client
+        except PyMongoError as exc:
+            client.close()
+            last_exc = exc
+    tried = " | ".join(candidate_uris())
+    raise RuntimeError(f"Nao foi possivel conectar ao MongoDB. URIs testadas: {tried}") from last_exc
 
 
 def ensure_replicaset(client: MongoClient) -> None:
@@ -146,7 +204,7 @@ def make_event(restaurants: List[Restaurant], dish_catalog: Dict[str, List[dict]
 
 
 def seed_initial(restaurants_count: int = 500, events_count: int = 10_000) -> None:
-    client = get_client()
+    client = get_client_with_fallback()
     ensure_replicaset(client)
     db = client[DB_NAME]
     col = db[COLLECTION_NAME]
@@ -167,7 +225,7 @@ def seed_initial(restaurants_count: int = 500, events_count: int = 10_000) -> No
 
 
 def stress_insert(events_count: int = 1000) -> None:
-    client = get_client()
+    client = get_client_with_fallback()
     ensure_replicaset(client)
     col = client[DB_NAME][COLLECTION_NAME]
 
