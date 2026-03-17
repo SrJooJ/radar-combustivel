@@ -137,8 +137,6 @@ REDIS_PASSWORD=
 
 ### Passo 3: Subir o ambiente
 ```bash
-git clone https://github.com/commithouse/lab-streaming-mongo-redis
-cd lab-streaming-mongo-redis
 docker-compose up -d
 ```
 
@@ -180,6 +178,25 @@ Saída esperada:
 ```bash
 python queries/redis_reader.py
 ```
+
+---
+
+### Passo 8: Terminal 3 — Dashboard Streamlit (Data View)
+```bash
+streamlit run data-view.py
+
+```
+
+Abra no navegador:
+```text
+http://localhost:8501
+```
+
+Você deve visualizar:
+- Top 10 restaurantes por views
+- Top 5 pratos por buscas
+- Resultado RediSearch (pizza em Pinheiros)
+- Série temporal por restaurante (`ts:resto:{id}:views`)
 
 ---
 
@@ -237,14 +254,33 @@ TS.RANGE ts:resto:245:views - + AGGREGATION sum 60000
 
 ---
 
-## 🧪 Passo 8: Simulando Carga (Stress Test)
+## 🧪 Passo 9: Simulando Carga (Stress Test)
 
 ```bash
-# Gera 1000 eventos aleatórios no MongoDB para testar o pipeline
+# Gera 1000 eventos aleatórios no MongoDB
 python init/mongo_seed.py --stress --events 1000
+
+# (Opcional) execute novamente para aumentar volume
+python init/mongo_seed.py --stress --events 2000
 ```
 
-Acompanhe o ranking sendo atualizado em tempo real no Terminal 2.
+Validação em tempo real:
+
+1. **Terminal 1 (consumer)** deve mostrar novos eventos sendo processados.
+2. **Terminal 2 (reader)** deve exibir aumento de scores nos rankings.
+3. **Dashboard Streamlit** deve refletir atualização de gráficos/tabelas após refresh.
+
+Validação rápida no Redis:
+
+```bash
+docker exec -it lab-redis redis-cli
+```
+
+```redis
+ZREVRANGE ranking:restaurants:views 0 9 WITHSCORES
+ZREVRANGE ranking:dishes:searches 0 4 WITHSCORES
+TS.RANGE ts:resto:245:views - + AGGREGATION sum 60000
+```
 
 ---
 
