@@ -59,7 +59,9 @@ Construir um pipeline de streaming em tempo real que captura eventos de um marke
 lab-encontro2/
 ├── docker-compose.yml          # MongoDB + Redis + App
 ├── requirements.txt            # Dependências Python
-├── .env.example                # Variáveis de ambiente
+├── .env                        # Variáveis de ambiente (local)
+├── .env.example                # Variáveis de ambiente (template)
+├── .gitignore                  # Arquivos ignorados pelo Git
 ├── docs/
 │   └── streaming-mongo-redis.md # Explicação do fluxo de streaming
 ├── init/
@@ -69,6 +71,7 @@ lab-encontro2/
 │   ├── mongodb_consumer.py      # Lê Change Stream e publica no Redis
 │   └── event_transformer.py     # Transforma eventos brutos
 ├── queries/
+│   ├── data-view.py            # Dashboard Streamlit em tempo real
 │   └── redis_reader.py         # Consultas de demonstração
 └── readme.md
 ```
@@ -151,6 +154,16 @@ pip install -r requirements.txt
 ```bash
 python init/mongo_seed.py
 ```
+## Validar coleção mongo db
+
+>conection url:
+```bash
+mongodb://localhost:27017/?directConnection=true
+```
+![alt text](image.png)
+
+### colecao eventos 
+![alt text](image-1.png)
 
 # 2. Cria índices no Redis (RediSearch + TimeSeries)
 ```bash
@@ -186,7 +199,7 @@ python queries/redis_reader.py
 
 ### Passo 8: Terminal 3 — Dashboard Streamlit (Data View)
 ```bash
-python -m streamlit run data-view.py
+python -m streamlit run queries/data-view.py
 
 ```
 
