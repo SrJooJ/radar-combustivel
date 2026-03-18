@@ -208,6 +208,8 @@ Abra no navegador:
 http://localhost:8501
 ```
 
+![alt text](image-2.png)
+
 Você deve visualizar:
 - Top 10 restaurantes por views
 - Top 5 pratos por buscas
