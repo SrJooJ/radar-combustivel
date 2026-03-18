@@ -120,7 +120,7 @@ O projeto modela 4 entidades/eventos principais:
 
 ### Fluxo de dados detalhado
 
-1. **Ingestao:** O script `mongo_seed.py` gera dados fake realistas (300 postos, 10.000 eventos) e insere no MongoDB. No modo stress, simula carga continua.
+1. **Ingestao:** O script `mongo_seed.py` gera dados fake realistas (300 postos, ~24.400 eventos) e insere no MongoDB. Inclui 10.000 eventos gerais (buscas, abastecimentos, avaliacoes) e 14.400 atualizacoes de preco dedicadas (8 por posto/combustivel ao longo de 24h). No modo stress, simula carga continua.
 
 2. **Change Stream:** O MongoDB, configurado como Replica Set (`rs0`), emite eventos via oplog para cada novo insert na collection `eventos`.
 
@@ -447,7 +447,7 @@ docker-compose up -d
 # 4. Instalar dependencias
 pip install -r requirements.txt
 
-# 5. Popular MongoDB (300 postos, 10K eventos)
+# 5. Popular MongoDB (300 postos, ~24K eventos)
 python init/mongo_seed.py
 
 # 6. Criar indices Redis

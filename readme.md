@@ -166,7 +166,7 @@ pip install -r requirements.txt
 ### Passo 5: Inicializar dados e índices
 
 ```bash
-# 1. Popula MongoDB com 300 postos e 10K eventos fake
+# 1. Popula MongoDB com 300 postos e ~24K eventos fake (10K gerais + 14.4K historico de precos)
 python init/mongo_seed.py
 
 # 2. Cria índices no Redis (RediSearch + TimeSeries)
@@ -184,7 +184,7 @@ python pipeline/mongodb_consumer.py
 
 Saída esperada:
 ```
-[CONSUMER] Backfill concluído: 10000 eventos.
+[CONSUMER] Backfill concluído: 24400 eventos.
 [CONSUMER] Conectado ao MongoDB Change Stream
 [CONSUMER] Aguardando eventos...
 [EVENT] busca | posto_45 | Posto Shell Pinheiros | Pinheiros
@@ -294,7 +294,7 @@ Validação:
 ## 📋 Checklist de Validação
 
 - [ ] `docker-compose up -d` sobe sem erros (MongoDB + Redis)
-- [ ] `mongo_seed.py` popula 300 postos e 10K eventos
+- [ ] `mongo_seed.py` popula 300 postos e ~24K eventos
 - [ ] `redis_indexes.py` cria `idx:postos` sem erro
 - [ ] `mongodb_consumer.py` processa eventos sem travar
 - [ ] `ZREVRANGE ranking:postos:buscas 0 9` retorna resultados
