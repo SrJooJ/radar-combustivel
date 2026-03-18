@@ -429,14 +429,16 @@ O projeto Radar Combustivel demonstra a construcao de um pipeline completo de da
 
 ## 9. Link do GitHub
 
-**Repositorio:** https://github.com/commithouse/lab-streaming-mongo-redis
+**Repositorio do grupo:** https://github.com/SrJooJ/radar-combustivel
+
+**Repositorio base (professor):** https://github.com/commithouse/lab-streaming-mongo-redis
 
 ### Como executar:
 
 ```bash
 # 1. Clonar repositorio
-git clone https://github.com/commithouse/lab-streaming-mongo-redis.git
-cd lab-streaming-mongo-redis
+git clone https://github.com/SrJooJ/radar-combustivel.git
+cd radar-combustivel
 
 # 2. Configurar ambiente
 cp .env.example .env
