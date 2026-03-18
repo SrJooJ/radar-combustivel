@@ -227,6 +227,37 @@ def make_event(postos: List[Posto], precos: Dict[str, Dict[str, float]], base_ts
     return event
 
 
+def build_price_history(postos: List[Posto], precos: Dict[str, Dict[str, float]], base_ts: int, updates_per_posto: int = 8) -> List[dict]:
+    """Gera historico de atualizacoes de preco para cada posto/combustivel ao longo de 24h."""
+    events: List[dict] = []
+    interval = 86_400_000 // (updates_per_posto + 1)
+
+    for p in postos:
+        for comb in COMBUSTIVEIS:
+            preco_atual = precos[p.posto_id][comb]
+            for i in range(updates_per_posto):
+                # Variacao de -3% a +3% a cada atualizacao
+                variacao = RANDOM.uniform(-0.03, 0.03)
+                preco_atual = round(preco_atual * (1 + variacao), 2)
+                ts = base_ts + interval * (i + 1) + RANDOM.randint(0, 60_000)
+                events.append({
+                    "type": "atualizacao_preco",
+                    "ts": ts,
+                    "user_id": f"usr_{RANDOM.randint(1, 15000)}",
+                    "posto_id": p.posto_id,
+                    "posto_nome": p.posto_nome,
+                    "bandeira": p.bandeira,
+                    "combustivel": comb,
+                    "preco": preco_atual,
+                    "bairro": p.bairro,
+                    "cidade": p.cidade,
+                    "lat": p.lat,
+                    "lon": p.lon,
+                    "nota": p.nota_base,
+                })
+    return events
+
+
 def seed_initial(postos_count: int = 300, events_count: int = 10_000) -> None:
     client = get_client_with_fallback()
     ensure_replicaset(client)
@@ -244,10 +275,21 @@ def seed_initial(postos_count: int = 300, events_count: int = 10_000) -> None:
     precos = build_precos_postos(postos)
 
     base_ts = int(time.time() * 1000) - 86_400_000
+
+    # Eventos gerais (buscas, abastecimentos, avaliacoes, precos aleatorios)
     events = [make_event(postos, precos, base_ts) for _ in range(events_count)]
+
+    # Historico dedicado de precos: 8 atualizacoes por posto/combustivel nas 24h
+    price_events = build_price_history(postos, precos, base_ts, updates_per_posto=8)
+    events.extend(price_events)
+
+    # Ordena por timestamp para backfill consistente
+    events.sort(key=lambda e: e["ts"])
+
     col.insert_many(events, ordered=False)
 
-    print(f"[SEED] MongoDB populado com {postos_count} postos e {events_count} eventos fake.")
+    print(f"[SEED] MongoDB populado com {postos_count} postos e {len(events)} eventos.")
+    print(f"[SEED] Inclui {len(price_events)} atualizacoes de preco dedicadas (8 por posto/combustivel).")
     print(f"[SEED] Database: {DB_NAME} | Collection: {COLLECTION_NAME}")
 
 
