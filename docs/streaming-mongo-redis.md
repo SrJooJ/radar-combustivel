@@ -58,7 +58,9 @@ Para cada evento, dependendo do tipo:
 - TimeSeries `ts:posto:{id}:buscas` — registra busca
 
 ### atualizacao_preco
-- Hash `posto:{id}` — atualiza campo `preco_{combustivel}`
+- Calcula variacao = preco_novo - preco_anterior
+- Sorted Set `ranking:variacao:{combustivel}` — ZADD com score = |variacao| (maior variacao no topo)
+- Hash `posto:{id}` — atualiza campos `preco_{combustivel}` e `variacao_{combustivel}`
 - Sorted Set `ranking:preco:{combustivel}` — ZADD com score = preco
 - TimeSeries `ts:posto:{id}:preco:{combustivel}` — registra evolucao de preco
 
