@@ -9,32 +9,49 @@ REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 
 
-def top_restaurants(redis: Redis, n: int = 10) -> List[Tuple[str, float]]:
-    return redis.zrevrange("ranking:restaurants:views", 0, n - 1, withscores=True)
+def top_postos_buscas(redis: Redis, n: int = 10) -> List[Tuple[str, float]]:
+    return redis.zrevrange("ranking:postos:buscas", 0, n - 1, withscores=True)
 
 
-def top_dishes(redis: Redis, n: int = 5) -> List[Tuple[str, float]]:
-    return redis.zrevrange("ranking:dishes:searches", 0, n - 1, withscores=True)
+def top_postos_abastecimentos(redis: Redis, n: int = 5) -> List[Tuple[str, float]]:
+    return redis.zrevrange("ranking:postos:abastecimentos", 0, n - 1, withscores=True)
 
 
-def dish_name(redis: Redis, dish_id: str) -> str:
-    name = redis.hget(f"dish:{dish_id}", "dish_name")
-    return name or dish_id
+def top_combustiveis_buscados(redis: Redis, n: int = 6) -> List[Tuple[str, float]]:
+    return redis.zrevrange("ranking:combustivel:buscas", 0, n - 1, withscores=True)
 
 
-def pizza_pinheiros(redis: Redis):
+def top_bairros_buscas(redis: Redis, n: int = 10) -> List[Tuple[str, float]]:
+    return redis.zrevrange("ranking:bairro:buscas", 0, n - 1, withscores=True)
+
+
+def menor_preco_gasolina(redis: Redis, n: int = 10) -> List[Tuple[str, float]]:
+    """Retorna postos com menor preço de gasolina comum (Sorted Set ordenado por preço)."""
+    return redis.zrange("ranking:preco:gasolina_comum", 0, n - 1, withscores=True)
+
+
+def posto_nome(redis: Redis, posto_id: str) -> str:
+    import re
+    match = re.search(r"(\d+)$", posto_id or "")
+    num = match.group(1) if match else posto_id
+    name = redis.hget(f"posto:{num}", "posto_nome")
+    return name or posto_id
+
+
+def shell_pinheiros(redis: Redis):
+    """Busca postos Shell em Pinheiros com nota >= 4.0."""
     query = (
-        Query("@cuisine:{pizza} @neighborhood:{Pinheiros}")
-        .add_filter(NumericFilter("stars", 4.5, 5))
-        .sort_by("views", asc=False)
+        Query("@bandeira:{Shell} @bairro:{Pinheiros}")
+        .add_filter(NumericFilter("nota", 4.0, 5))
+        .sort_by("buscas", asc=False)
         .paging(0, 10)
     )
-    return redis.ft("idx:restaurants").search(query)
+    return redis.ft("idx:postos").search(query)
 
 
-def views_series(redis: Redis, restaurant_numeric_id: str = "245"):
-    key = f"ts:resto:{restaurant_numeric_id}:views"
-    return redis.execute_command("TS.RANGE", key, "-", "+", "AGGREGATION", "sum", "60000")
+def preco_series(redis: Redis, posto_numeric_id: str = "1", combustivel: str = "gasolina_comum"):
+    key = f"ts:posto:{posto_numeric_id}:preco:{combustivel}"
+    return redis.execute_command("TS.RANGE", key, "-", "+", "AGGREGATION", "last", "60000")
 
 
 def print_block(title: str) -> None:
@@ -45,41 +62,56 @@ def print_block(title: str) -> None:
 
 def main() -> None:
     redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    print("[READER] Consultas em tempo real iniciadas.")
+    print("[READER] Consultas em tempo real do Radar Combustível iniciadas.")
 
     while True:
-        print_block("Top 10 restaurantes mais visitados")
-        for idx, (member, score) in enumerate(top_restaurants(redis), start=1):
-            print(f"{idx:02d}. {member} -> {int(score)} views")
+        print_block("Top 10 postos mais buscados")
+        for idx, (member, score) in enumerate(top_postos_buscas(redis), start=1):
+            nome = posto_nome(redis, member)
+            print(f"{idx:02d}. {nome} ({member}) -> {int(score)} buscas")
 
-        print_block("Top 5 pratos mais buscados")
-        for idx, (member, score) in enumerate(top_dishes(redis), start=1):
-            print(f"{idx:02d}. {dish_name(redis, member)} ({member}) -> {int(score)} buscas")
+        print_block("Top 5 postos com mais abastecimentos")
+        for idx, (member, score) in enumerate(top_postos_abastecimentos(redis), start=1):
+            nome = posto_nome(redis, member)
+            print(f"{idx:02d}. {nome} ({member}) -> {int(score)} abastecimentos")
 
-        print_block("Pizza em Pinheiros com 4.5+ estrelas (RediSearch)")
+        print_block("Combustíveis mais buscados")
+        for idx, (member, score) in enumerate(top_combustiveis_buscados(redis), start=1):
+            print(f"{idx:02d}. {member} -> {int(score)} buscas")
+
+        print_block("Top 10 bairros com mais buscas")
+        for idx, (member, score) in enumerate(top_bairros_buscas(redis), start=1):
+            print(f"{idx:02d}. {member} -> {int(score)} buscas")
+
+        print_block("Top 10 menor preço gasolina comum")
+        for idx, (member, score) in enumerate(menor_preco_gasolina(redis), start=1):
+            nome = posto_nome(redis, member)
+            print(f"{idx:02d}. {nome} ({member}) -> R$ {score:.2f}")
+
+        print_block("Postos Shell em Pinheiros com nota >= 4.0 (RediSearch)")
         try:
-            result = pizza_pinheiros(redis)
+            result = shell_pinheiros(redis)
             if result.total == 0:
-                print("Nenhum resultado para @cuisine:{pizza} @neighborhood:{Pinheiros}.")
+                print("Nenhum resultado para @bandeira:{Shell} @bairro:{Pinheiros}.")
             else:
                 for doc in result.docs[:10]:
                     print(
-                        f"{doc.id} | {getattr(doc, 'restaurant_name', '-')}"
-                        f" | stars={getattr(doc, 'stars', '-')}"
-                        f" | views={getattr(doc, 'views', '-')}"
+                        f"{doc.id} | {getattr(doc, 'posto_nome', '-')}"
+                        f" | nota={getattr(doc, 'nota', '-')}"
+                        f" | buscas={getattr(doc, 'buscas', '-')}"
                     )
         except Exception as exc:
             print(f"Falha na busca RediSearch: {exc}")
 
-        print_block("Série temporal de views do restaurante 245 (agregação por minuto)")
+        print_block("Série temporal de preço gasolina comum - posto 1 (por minuto)")
         try:
-            series = views_series(redis, "245")
+            series = preco_series(redis, "1", "gasolina_comum")
             if not series:
-                print("Sem dados de série temporal para ts:resto:245:views.")
+                print("Sem dados de série temporal para ts:posto:1:preco:gasolina_comum.")
             else:
                 for point in series[-10:]:
                     ts, value = point
-                    print(f"{ts} -> {value}")
+                    print(f"{ts} -> R$ {float(value):.2f}")
         except Exception as exc:
             print(f"Falha na TimeSeries: {exc}")
 

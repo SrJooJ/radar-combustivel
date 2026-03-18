@@ -14,84 +14,95 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/?directConnection=
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
-DB_NAME = "marketplace"
-COLLECTION_NAME = "events"
+DB_NAME = "radar_combustivel"
+COLLECTION_NAME = "eventos"
 
 
-def numeric_restaurant_id(value: str) -> str:
+def numeric_posto_id(value: str) -> str:
     match = re.search(r"(\d+)$", value or "")
     return match.group(1) if match else value
 
 
-def load_restaurant_snapshot() -> Dict[str, dict]:
+def load_posto_snapshot() -> Dict[str, dict]:
     mongo = MongoClient(MONGO_URI)
     col = mongo[DB_NAME][COLLECTION_NAME]
     pipeline = [
         {"$sort": {"ts": -1}},
         {
             "$group": {
-                "_id": "$restaurant_id",
-                "restaurant_name": {"$first": "$restaurant_name"},
-                "neighborhood": {"$first": "$neighborhood"},
-                "cuisine": {"$first": "$cuisine"},
+                "_id": "$posto_id",
+                "posto_nome": {"$first": "$posto_nome"},
+                "bandeira": {"$first": "$bandeira"},
+                "bairro": {"$first": "$bairro"},
+                "cidade": {"$first": "$cidade"},
                 "lat": {"$first": "$lat"},
                 "lon": {"$first": "$lon"},
-                "stars": {"$first": "$stars"},
+                "nota": {"$first": "$nota"},
             }
         },
     ]
     out = {}
     for row in col.aggregate(pipeline):
-        rid = row["_id"]
-        out[rid] = row
+        pid = row["_id"]
+        out[pid] = row
     return out
 
 
-def load_dish_snapshot() -> Dict[str, dict]:
+def load_precos_snapshot() -> Dict[str, Dict[str, float]]:
+    """Carrega o último preço por posto/combustível."""
     mongo = MongoClient(MONGO_URI)
     col = mongo[DB_NAME][COLLECTION_NAME]
     pipeline = [
+        {"$match": {"type": "atualizacao_preco"}},
         {"$sort": {"ts": -1}},
         {
             "$group": {
-                "_id": "$dish_id",
-                "dish_name": {"$first": "$dish_name"},
-                "cuisine": {"$first": "$cuisine"},
+                "_id": {"posto_id": "$posto_id", "combustivel": "$combustivel"},
+                "preco": {"$first": "$preco"},
             }
         },
     ]
-    out = {}
+    out: Dict[str, Dict[str, float]] = {}
     for row in col.aggregate(pipeline):
-        did = row["_id"]
-        out[did] = row
+        pid = row["_id"]["posto_id"]
+        comb = row["_id"]["combustivel"]
+        if pid not in out:
+            out[pid] = {}
+        out[pid][comb] = float(row["preco"])
     return out
 
 
 def main() -> None:
     redis = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    snapshot = load_restaurant_snapshot()
-    dish_snapshot = load_dish_snapshot()
+    snapshot = load_posto_snapshot()
+    precos = load_precos_snapshot()
 
-    # Seed hash documents: resto:{id}
-    for rid, item in snapshot.items():
-        simple_id = numeric_restaurant_id(rid)
-        key = f"resto:{simple_id}"
-        redis.hset(
-            key,
-            mapping={
-                "restaurant_id": rid,
-                "restaurant_name": item.get("restaurant_name", ""),
-                "neighborhood": item.get("neighborhood", ""),
-                "cuisine": item.get("cuisine", ""),
-                "stars": float(item.get("stars", 4.0)),
-                "views": 0,
-                "location": f"{item.get('lon', 0)},{item.get('lat', 0)}",
-            },
-        )
+    # Seed hash documents: posto:{id}
+    for pid, item in snapshot.items():
+        simple_id = numeric_posto_id(pid)
+        key = f"posto:{simple_id}"
+        mapping = {
+            "posto_id": pid,
+            "posto_nome": item.get("posto_nome", ""),
+            "bandeira": item.get("bandeira", ""),
+            "bairro": item.get("bairro", ""),
+            "cidade": item.get("cidade", "São Paulo"),
+            "nota": float(item.get("nota", 3.0)),
+            "buscas": 0,
+            "abastecimentos": 0,
+            "location": f"{item.get('lon', 0)},{item.get('lat', 0)}",
+        }
 
-        # TimeSeries keys from spec: ts:resto:{id}:views|orders
-        for metric in ("views", "orders"):
-            ts_key = f"ts:resto:{simple_id}:{metric}"
+        # Adiciona preços disponíveis ao hash
+        if pid in precos:
+            for comb, preco in precos[pid].items():
+                mapping[f"preco_{comb}"] = preco
+
+        redis.hset(key, mapping=mapping)
+
+        # TimeSeries: buscas, abastecimentos, e preço por combustível
+        for metric in ("buscas", "abastecimentos"):
+            ts_key = f"ts:posto:{simple_id}:{metric}"
             try:
                 redis.execute_command(
                     "TS.CREATE",
@@ -99,47 +110,61 @@ def main() -> None:
                     "RETENTION",
                     604800000,
                     "LABELS",
-                    "restaurant_id",
+                    "posto_id",
                     simple_id,
                     "metric",
                     metric,
                 )
             except Exception:
-                # already exists
                 pass
 
-    # Seed dish catalog hashes: dish:{dish_id}
-    for did, item in dish_snapshot.items():
-        redis.hset(
-            f"dish:{did}",
-            mapping={
-                "dish_id": did,
-                "dish_name": item.get("dish_name", ""),
-                "cuisine": item.get("cuisine", ""),
-            },
-        )
+        # TimeSeries para preço de cada combustível
+        combustiveis = ["gasolina_comum", "gasolina_aditivada", "etanol", "diesel", "diesel_s10", "gnv"]
+        for comb in combustiveis:
+            ts_key = f"ts:posto:{simple_id}:preco:{comb}"
+            try:
+                redis.execute_command(
+                    "TS.CREATE",
+                    ts_key,
+                    "RETENTION",
+                    604800000,
+                    "LABELS",
+                    "posto_id",
+                    simple_id,
+                    "metric",
+                    "preco",
+                    "combustivel",
+                    comb,
+                )
+            except Exception:
+                pass
 
-    # Recreate RediSearch index (idempotent for lab reruns)
+    # Recria índice RediSearch (idempotente para re-execuções)
     try:
-        redis.execute_command("FT.DROPINDEX", "idx:restaurants", "DD")
+        redis.execute_command("FT.DROPINDEX", "idx:postos", "DD")
     except Exception:
         pass
 
-    redis.ft("idx:restaurants").create_index(
+    redis.ft("idx:postos").create_index(
         fields=[
-            TextField("restaurant_name", weight=2.0),
-            TagField("neighborhood"),
-            TagField("cuisine"),
-            NumericField("stars", sortable=True),
-            NumericField("views", sortable=True),
+            TextField("posto_nome", weight=2.0),
+            TagField("bandeira"),
+            TagField("bairro"),
+            TagField("cidade"),
+            NumericField("nota", sortable=True),
+            NumericField("buscas", sortable=True),
+            NumericField("abastecimentos", sortable=True),
+            NumericField("preco_gasolina_comum", sortable=True),
+            NumericField("preco_etanol", sortable=True),
+            NumericField("preco_diesel", sortable=True),
             GeoField("location"),
         ],
-        definition=IndexDefinition(prefix=["resto:"], index_type=IndexType.HASH),
+        definition=IndexDefinition(prefix=["posto:"], index_type=IndexType.HASH),
     )
 
     print(
-        f"[REDIS] idx:restaurants criado com {len(snapshot)} documentos. "
-        f"Catalogo de pratos: {len(dish_snapshot)}."
+        f"[REDIS] idx:postos criado com {len(snapshot)} documentos. "
+        f"Preços carregados para {len(precos)} postos."
     )
 
 

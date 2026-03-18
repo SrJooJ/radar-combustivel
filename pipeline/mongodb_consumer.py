@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from redis import Redis
 from redis.exceptions import ResponseError
 
-from event_transformer import hash_key, normalize_event, ranking_key, ts_key
+from event_transformer import hash_key, normalize_event, preco_ts_key, ts_key
 
 load_dotenv()
 
@@ -16,13 +16,12 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/?directConnection=
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
-DB_NAME = "marketplace"
-COLLECTION_NAME = "events"
+DB_NAME = "radar_combustivel"
+COLLECTION_NAME = "eventos"
 
 
-def ensure_ts_add(redis: Redis, key: str, ts: int, value: int, labels: Dict[str, str]) -> None:
+def ensure_ts_add(redis: Redis, key: str, ts: int, value: float, labels: Dict[str, str]) -> None:
     try:
-        # Keep latest value when the same timestamp appears again.
         redis.execute_command("TS.ADD", key, ts, value, "ON_DUPLICATE", "LAST")
     except ResponseError as exc:
         msg = str(exc)
@@ -42,82 +41,118 @@ def ensure_ts_add(redis: Redis, key: str, ts: int, value: int, labels: Dict[str,
 
 
 def apply_to_redis(redis: Redis, event: Dict[str, Any]) -> None:
-    r_hash = hash_key(event)
+    p_hash = hash_key(event)
+
+    # Atualiza hash do posto com dados mais recentes
     redis.hset(
-        r_hash,
+        p_hash,
         mapping={
-            "restaurant_id": event["restaurant_id"],
-            "restaurant_name": event["restaurant_name"],
-            "neighborhood": event["neighborhood"],
-            "cuisine": event["cuisine"],
+            "posto_id": event["posto_id"],
+            "posto_nome": event["posto_nome"],
+            "bandeira": event["bandeira"],
+            "bairro": event["bairro"],
+            "cidade": event["cidade"],
             "location": f"{event['lon']},{event['lat']}",
         },
     )
-    # Keep a Redis-only dish catalog for dashboards/readers.
-    redis.hset(
-        f"dish:{event['dish_id']}",
-        mapping={
-            "dish_id": event["dish_id"],
-            "dish_name": event["dish_name"],
-            "cuisine": event["cuisine"],
-        },
-    )
 
-    if event["type"] == "view":
-        score = redis.zincrby("ranking:restaurants:views", 1, event["restaurant_id"])
-        redis.hincrby(r_hash, "views", 1)
+    if event["type"] == "busca":
+        # Incrementa ranking de postos mais buscados
+        score = redis.zincrby("ranking:postos:buscas", 1, event["posto_id"])
+        redis.hincrby(p_hash, "buscas", 1)
+
+        # Ranking de combustíveis mais buscados
+        redis.zincrby("ranking:combustivel:buscas", 1, event["combustivel"])
+
+        # Ranking de bairros com mais buscas
+        redis.zincrby("ranking:bairro:buscas", 1, event["bairro"])
+
+        # TimeSeries de buscas do posto
         ensure_ts_add(
             redis,
-            ts_key(event, "views"),
+            ts_key(event, "buscas"),
             event["ts"],
             1,
-            {"restaurant_id": event["restaurant_num"], "metric": "views"},
+            {"posto_id": event["posto_num"], "metric": "buscas"},
         )
         print(
-            f"[REDIS] ZINCRBY ranking:restaurants:views 1 {event['restaurant_id']} → score: {int(float(score))}"
+            f"[REDIS] ZINCRBY ranking:postos:buscas 1 {event['posto_id']} -> score: {int(float(score))}"
         )
 
-    elif event["type"] == "order":
-        score = redis.zincrby("ranking:restaurants:orders", 1, event["restaurant_id"])
-        redis.hincrby(r_hash, "orders", 1)
+    elif event["type"] == "atualizacao_preco":
+        # Calcula variação de preço antes de sobrescrever
+        preco_anterior = redis.hget(p_hash, f"preco_{event['combustivel']}")
+        if preco_anterior is not None:
+            variacao = round(event["preco"] - float(preco_anterior), 2)
+            variacao_abs = round(abs(variacao), 2)
+            # Armazena variação absoluta no ranking (maior variação = score maior)
+            redis.zadd(f"ranking:variacao:{event['combustivel']}", {event["posto_id"]: variacao_abs})
+            # Armazena variação com sinal no hash do posto
+            redis.hset(p_hash, f"variacao_{event['combustivel']}", variacao)
+
+        # Atualiza preço no hash do posto
+        redis.hset(p_hash, f"preco_{event['combustivel']}", event["preco"])
+
+        # Ranking de menor preço por combustível (score = preço, menor = melhor)
+        ranking_key = f"ranking:preco:{event['combustivel']}"
+        redis.zadd(ranking_key, {event["posto_id"]: event["preco"]})
+
+        # TimeSeries de evolução de preço
         ensure_ts_add(
             redis,
-            ts_key(event, "orders"),
+            preco_ts_key(event),
+            event["ts"],
+            event["preco"],
+            {
+                "posto_id": event["posto_num"],
+                "metric": "preco",
+                "combustivel": event["combustivel"],
+            },
+        )
+        print(
+            f"[REDIS] Preco atualizado {event['posto_id']} {event['combustivel']} -> R$ {event['preco']:.2f}"
+        )
+
+    elif event["type"] == "abastecimento":
+        # Incrementa ranking de postos com mais abastecimentos
+        score = redis.zincrby("ranking:postos:abastecimentos", 1, event["posto_id"])
+        redis.hincrby(p_hash, "abastecimentos", 1)
+
+        # TimeSeries de abastecimentos
+        ensure_ts_add(
+            redis,
+            ts_key(event, "abastecimentos"),
             event["ts"],
             1,
-            {"restaurant_id": event["restaurant_num"], "metric": "orders"},
+            {"posto_id": event["posto_num"], "metric": "abastecimentos"},
         )
         print(
-            f"[REDIS] ZINCRBY ranking:restaurants:orders 1 {event['restaurant_id']} → score: {int(float(score))}"
+            f"[REDIS] ZINCRBY ranking:postos:abastecimentos 1 {event['posto_id']} -> score: {int(float(score))}"
         )
 
-    elif event["type"] == "search":
-        score = redis.zincrby("ranking:dishes:searches", 1, event["dish_id"])
-        redis.hincrby(r_hash, "searches", 1)
-        print(
-            f"[REDIS] ZINCRBY ranking:dishes:searches 1 {event['dish_id']} → score: {int(float(score))}"
-        )
-
-    elif event["type"] == "rating":
-        redis.hincrbyfloat(r_hash, "rating_sum", event["stars"])
-        redis.hincrby(r_hash, "rating_count", 1)
-        rating_sum = float(redis.hget(r_hash, "rating_sum") or 0.0)
-        rating_count = int(redis.hget(r_hash, "rating_count") or 1)
-        avg = round(rating_sum / max(rating_count, 1), 2)
-        redis.hset(r_hash, "stars", avg)
-        print(f"[REDIS] HSET {r_hash} stars {avg}")
+    elif event["type"] == "avaliacao":
+        # Calcula média de nota do posto
+        redis.hincrbyfloat(p_hash, "nota_sum", event["nota"])
+        redis.hincrby(p_hash, "nota_count", 1)
+        nota_sum = float(redis.hget(p_hash, "nota_sum") or 0.0)
+        nota_count = int(redis.hget(p_hash, "nota_count") or 1)
+        avg = round(nota_sum / max(nota_count, 1), 2)
+        redis.hset(p_hash, "nota", avg)
+        print(f"[REDIS] HSET {p_hash} nota {avg}")
 
 
 def handle_event(redis: Redis, raw_event: Dict[str, Any]) -> None:
     event = normalize_event(raw_event)
-    if event["type"] not in {"view", "search", "order", "rating"}:
+    if event["type"] not in {"busca", "atualizacao_preco", "abastecimento", "avaliacao"}:
         return
 
-    if event["type"] == "search":
-        print(f"[EVENT] search | dish: {event['dish_name'].lower()}")
+    if event["type"] == "atualizacao_preco":
+        print(
+            f"[EVENT] atualizacao_preco | {event['posto_id']} | {event['combustivel']} | R$ {event['preco']:.2f}"
+        )
     else:
         print(
-            f"[EVENT] {event['type']} | {event['restaurant_id']} | {event['restaurant_name']} | {event['neighborhood']}"
+            f"[EVENT] {event['type']} | {event['posto_id']} | {event['posto_nome']} | {event['bairro']}"
         )
     apply_to_redis(redis, event)
 
