@@ -22,12 +22,11 @@
 
 | Nome | RM |
 |------|-----|
-| (Preencher nome) | (Preencher RM) |
-| (Preencher nome) | (Preencher RM) |
-| (Preencher nome) | (Preencher RM) |
-| (Preencher nome) | (Preencher RM) |
-| (Preencher nome) | (Preencher RM) |
-| (Preencher nome) | (Preencher RM) |
+| Joao Bamberg | RM 361563 |
+| Karine Cruz | RM 361697 |
+| Lucas Almeida | RM 363849 |
+| Joao Cruz | RM 361585 |
+| Gabriel Baradel | RM 363699 |
 
 ---
 
