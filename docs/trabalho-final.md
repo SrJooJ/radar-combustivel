@@ -343,56 +343,56 @@ Grafico de barras horizontal mostrando os postos com maior volume de buscas.
 - **Fonte Redis:** `ZREVRANGE ranking:postos:buscas 0 9 WITHSCORES`
 - **Valor:** Identifica quais postos tem mais demanda
 
-*[Inserir screenshot do painel]*
+![Top 10 postos mais buscados](image.png)
 
 ### Painel 2: Combustiveis mais buscados
 Grafico de pizza mostrando a participacao de cada combustivel nas buscas.
 - **Fonte Redis:** `ZREVRANGE ranking:combustivel:buscas 0 5 WITHSCORES`
 - **Valor:** Mostra quais combustiveis estao "em alta"
 
-*[Inserir screenshot do painel]*
+![Combustiveis mais buscados](image-1.png)
 
 ### Painel 3: Bairros com mais buscas
 Grafico de barras mostrando os bairros com maior volume de buscas.
 - **Fonte Redis:** `ZREVRANGE ranking:bairro:buscas 0 14 WITHSCORES`
 - **Valor:** Identifica regioes com maior demanda por combustivel
 
-*[Inserir screenshot do painel]*
+![Bairros com mais buscas](image-2.png)
 
 ### Painel 4: Ranking de menor preco
 Grafico de barras com os postos com menor preco para o combustivel selecionado.
 - **Fonte Redis:** `ZRANGE ranking:preco:{combustivel} 0 9 WITHSCORES`
 - **Valor:** Responde diretamente "onde abastecer mais barato?"
 
-*[Inserir screenshot do painel]*
+![Ranking de menor preco](image-3.png)
 
 ### Painel 5: Postos com maior variacao de preco
 Grafico de barras colorido (vermelho = subiu, verde = desceu) mostrando os postos com maior variacao recente.
 - **Fonte Redis:** `ZREVRANGE ranking:variacao:{combustivel} 0 9 WITHSCORES` + `HGET posto:{id} variacao_{combustivel}`
 - **Valor:** Alerta para postos que alteraram preco significativamente
 
-*[Inserir screenshot do painel]*
+![Postos com maior variacao de preco](image-7.png)
 
 ### Painel 6: Top 10 postos mais bem avaliados
 Grafico de barras com os postos de melhor nota, colorido por bandeira.
 - **Fonte Redis:** `FT.SEARCH idx:postos "*" SORTBY nota DESC LIMIT 0 10`
 - **Valor:** Ranking de qualidade percebida pelos usuarios
 
-*[Inserir screenshot do painel]*
+![Top 10 postos mais bem avaliados](image-4.png)
 
 ### Painel 7: Busca dinamica (RediSearch)
 Formulario interativo com filtros de bandeira, bairro e nota minima.
 - **Fonte Redis:** `FT.SEARCH idx:postos "@bandeira:{X} @bairro:{Y} @nota:[Z 5]"`
 - **Valor:** Permite consulta personalizada em <10ms
 
-*[Inserir screenshot do painel]*
+![Busca dinamica RediSearch](image-5.png)
 
 ### Painel 8: Evolucao de preco (TimeSeries)
 Grafico de linha mostrando a variacao de preco ao longo do tempo para um posto e combustivel selecionados.
 - **Fonte Redis:** `TS.RANGE ts:posto:{id}:preco:{combustivel} - + AGGREGATION last 60000`
 - **Valor:** Visualiza tendencia de preco
 
-*[Inserir screenshot do painel]*
+![Evolucao de preco TimeSeries](image-6.png)
 
 ---
 
