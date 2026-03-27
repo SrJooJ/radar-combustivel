@@ -77,45 +77,8 @@ O projeto modela 4 entidades/eventos principais:
 ### Diagrama da arquitetura
 
 ```
-+-------------------------------------------------------------+
-|                    CAMADA DE ORIGEM                          |
-|  Usuarios/Postos --> MongoDB (eventos brutos)                |
-|  Database: radar_combustivel | Collection: eventos           |
-+-----------------------------+-------------------------------+
-                              |
-                              | Change Stream (oplog)
-                              v
-+-------------------------------------------------------------+
-|              PIPELINE PYTHON (Consumer)                      |
-|  mongodb_consumer.py + event_transformer.py                  |
-|                                                              |
-|  1. Le Change Stream do MongoDB (inserts)                    |
-|  2. Normaliza evento (tipo, timestamp, preco, coordenadas)   |
-|  3. Aplica transformacoes por tipo de evento                 |
-|  4. Escreve nas estruturas Redis adequadas                   |
-+-----------------------------+-------------------------------+
-                              |
-          +-------------------+-------------------+
-          |                   |                   |
-          v                   v                   v
-   +--------------+   +--------------+   +--------------+
-   | Sorted Sets  |   |  RediSearch  |   | TimeSeries   |
-   | (Rankings)   |   | (Busca+Geo)  |   | (Precos)     |
-   +--------------+   +--------------+   +--------------+
-   | - menor preco|   | - bandeira   |   | - preco por  |
-   | - mais buscas|   | - bairro     |   |   combustivel|
-   | - por bairro |   | - nota       |   | - por minuto |
-   | - variacao   |   | - GeoField   |   |              |
-   +--------------+   +--------------+   +--------------+
-          |                   |                   |
-          +-------------------+-------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|              CAMADA DE VISUALIZACAO                          |
-|  Streamlit Dashboard (data-view.py)                          |
-|  8 paineis interativos — consultas <10ms                     |
-+-------------------------------------------------------------+
+![alt text](image-8.png)
+
 ```
 
 ### Fluxo de dados detalhado
