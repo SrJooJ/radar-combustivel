@@ -76,10 +76,7 @@ O projeto modela 4 entidades/eventos principais:
 
 ### Diagrama da arquitetura
 
-```
-![alt text](image-8.png)
-
-```
+![Diagrama da arquitetura](image-8.png)
 
 ### Fluxo de dados detalhado
 
